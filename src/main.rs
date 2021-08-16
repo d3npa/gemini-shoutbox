@@ -3,6 +3,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use url::Url;
+use urlencoding as ue;
 
 use std::io::Write;
 use std::error::Error;
@@ -54,20 +55,24 @@ fn render_shoutbox() -> Vec<u8> {
     gh::create_response(SUCCESS, Some("text/gemini"), Some(&shoutbox))
 }
 
-/// shout if there is a msg or redirect to shoutbox
+/// shout if there is a msg or prompt for one
 fn shout(request: &Url) -> Vec<u8> {
     match request.query() {
         None => gh::create_response(INPUT, Some("Shout something!"), None),
         Some(message) => {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .append(true)
-                .open(SHOUTBOX)
-                // BAD. Maybe return a gemini error to client when it fails
-                .expect("in shout(): failed to open shoutbox file"); 
-            file.write(format!("{}\n", message).as_bytes())
-                .expect("in shout(): failed to write to shoutbox file");
-            gh::create_response(SUCCESS, Some("/shoutbox"), None)
+            let message = ue::decode(&message)
+                .expect("in shout(): unable to decode received message");
+            if ! (message.is_empty() || message.starts_with("```")) {
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(SHOUTBOX)
+                    // BAD. Maybe return a gemini error to client when it fails
+                    .expect("in shout(): failed to open shoutbox file"); 
+                file.write(format!("{}\n", message).as_bytes())
+                    .expect("in shout(): failed to write to shoutbox file");
+            }
+            gh::create_response(REDIRECT_TEMPORARY, Some("/shoutbox"), None)
         }
     }
 }
